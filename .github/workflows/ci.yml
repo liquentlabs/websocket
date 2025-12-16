@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          # HACK(mafredri): The exampels and thirdparty library require Go 1.24
+          # HACK(mafredri): The examples and thirdparty library require Go 1.24
           # due to `golang.org/x/crypto` import, so lint tools must be built by
           # the highest version of Go used.
           go-version-file: ./internal/thirdparty/go.mod
@@ -30,7 +30,7 @@ jobs:
       - run: go version
       - uses: actions/setup-go@v5
         with:
-          # HACK(mafredri): The exampels and thirdparty library require Go 1.24
+          # HACK(mafredri): The examples and thirdparty library require Go 1.24
           # due to `golang.org/x/crypto` import, so lint tools must be built by
           # the highest version of Go used.
           go-version-file: ./internal/thirdparty/go.mod
