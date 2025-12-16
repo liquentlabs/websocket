@@ -20,6 +20,8 @@ When asked to plan, write to `PLAN.md`. Write for someone else, not yourself; do
 
 ## Research
 
+**If you were given a link, read it now.** Do not explore code, do not pass go. Fetch the linked issue or document first. Summarize what it asks for before proceeding. If you cannot restate the problem, you are not ready to solve it.
+
 **Read the issue carefully.** Before designing a solution, verify you understand what's actually being requested. Restate the problem in your own words. A solution to the wrong problem wastes everyone's time.
 
 **Understand the protocol first.** Code comments reference RFC 6455 (WebSocket), RFC 7692 (compression), and RFC 8441 (HTTP/2). When behavior seems odd, check the RFC section cited nearby.
@@ -33,6 +35,8 @@ When asked to plan, write to `PLAN.md`. Write for someone else, not yourself; do
 **Search exhaustively when modifying patterns.** When changing how something is done in multiple places, grep for all instances. Missing one creates inconsistent behavior.
 
 ## Making Changes
+
+**Did you do your research?** If you haven't read the linked issue, traced the code paths, and verified your understanding, stop. Go back to Research.
 
 **Every change needs a reason.** Don't reword comments, rename variables, or restructure code without justification. If you can't articulate why a change improves things, don't make it.
 
