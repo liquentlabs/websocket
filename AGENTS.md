@@ -72,6 +72,8 @@ Never use emdash. Use commas, semicolons, or separate sentences.
 
 **Wrap comments** at ~80 characters, continuing naturally at word boundaries. Don't put each sentence on its own line.
 
+**Naming matters.** Before proposing a name, stop and review existing names in the file. A good name is accurate on its own and consistent in context. Ask: what would someone assume from this name? Does it fit with how similar things are named?
+
 **Avoid:**
 
 - Tautologies and redundant explanations the code already conveys
