@@ -6,6 +6,18 @@ This document helps AI agents work effectively in this codebase. It explains the
 
 This is a minimal, idiomatic WebSocket library. Simplicity is a feature. Before adding code, consider whether it's necessary. Before adding a dependency, don't; tests requiring external packages are isolated in `internal/thirdparty`.
 
+## Planning
+
+When asked to plan, write to `PLAN.md`. Write for someone else, not yourself; don't skip context you already know. Research deeply before proposing solutions.
+
+**Follow references.** If there's a link, issue, or RFC citation, read it. Document important findings in a research section so the implementer can verify.
+
+**Focus on what and why.** Provide enough context for the implementer to understand the problem and constraints. Code examples can illustrate intent, but don't over-specify; leave room for the implementer to find a better approach.
+
+**Tell them where to look.** Point to specific files, functions, or line numbers. Make claims verifiable.
+
+**Review before finishing.** Make a final pass to check for gaps in research or unanswered questions, then update the document.
+
 ## Research
 
 **Read the issue carefully.** Before designing a solution, verify you understand what's actually being requested. Restate the problem in your own words. A solution to the wrong problem wastes everyone's time.
