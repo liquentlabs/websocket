@@ -14,6 +14,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/coder/websocket/internal/bpool"
 	"github.com/coder/websocket/internal/errd"
 	"github.com/coder/websocket/internal/util"
 )
@@ -100,7 +101,7 @@ func (c *Conn) writer(ctx context.Context, typ MessageType) (io.WriteCloser, err
 }
 
 func (c *Conn) write(ctx context.Context, typ MessageType, p []byte) (int, error) {
-	mw, err := c.writer(ctx, typ)
+	_, err := c.writer(ctx, typ)
 	if err != nil {
 		return 0, err
 	}
@@ -110,13 +111,49 @@ func (c *Conn) write(ctx context.Context, typ MessageType, p []byte) (int, error
 		return c.writeFrame(ctx, true, false, c.msgWriter.opcode, p)
 	}
 
-	n, err := mw.Write(p)
-	if err != nil {
-		return n, err
+	// Below threshold: write uncompressed in single frame.
+	if len(p) < c.flateThreshold {
+		defer c.msgWriter.mu.unlock()
+		return c.writeFrame(ctx, true, false, c.msgWriter.opcode, p)
 	}
 
-	err = mw.Close()
-	return n, err
+	// Compress into buffer, then write as single frame.
+	defer c.msgWriter.mu.unlock()
+
+	buf := bpool.Get()
+	defer bpool.Put(buf)
+
+	c.msgWriter.ensureFlate()
+	fw := c.msgWriter.flateWriter
+	fw.Reset(buf)
+
+	_, err = fw.Write(p)
+	if err != nil {
+		return 0, fmt.Errorf("failed to compress: %w", err)
+	}
+
+	err = fw.Flush()
+	if err != nil {
+		return 0, fmt.Errorf("failed to flush compression: %w", err)
+	}
+
+	if !c.msgWriter.flateContextTakeover() {
+		c.msgWriter.putFlateWriter()
+	} else {
+		// Restore flateWriter destination for subsequent Writer() API calls.
+		fw.Reset(c.msgWriter.trimWriter)
+	}
+
+	// Remove deflate tail bytes (last 4 bytes: \x00\x00\xff\xff).
+	// See RFC 7692 section 7.2.1.
+	compressed := buf.Bytes()
+	compressed = compressed[:len(compressed)-4]
+
+	_, err = c.writeFrame(ctx, true, true, c.msgWriter.opcode, compressed)
+	if err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
 
 func (mw *msgWriter) reset(ctx context.Context, typ MessageType) error {
