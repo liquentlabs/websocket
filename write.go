@@ -106,18 +106,13 @@ func (c *Conn) write(ctx context.Context, typ MessageType, p []byte) (int, error
 		return 0, err
 	}
 
-	if !c.flate() {
-		defer c.msgWriter.mu.unlock()
-		return c.writeFrame(ctx, true, false, c.msgWriter.opcode, p)
-	}
-
-	if len(p) < c.flateThreshold {
+	if !c.flate() || len(p) < c.flateThreshold {
 		defer c.msgWriter.mu.unlock()
 		return c.writeFrame(ctx, true, false, c.msgWriter.opcode, p)
 	}
 
 	defer c.msgWriter.mu.unlock()
-	return c.msgWriter.writeFull(ctx, p)
+	return c.msgWriter.writeCompressedFrame(ctx, p)
 }
 
 func (mw *msgWriter) reset(ctx context.Context, typ MessageType) error {
@@ -143,8 +138,18 @@ func (mw *msgWriter) putFlateWriter() {
 	}
 }
 
-// writeFull compresses and writes p as a single frame.
-func (mw *msgWriter) writeFull(ctx context.Context, p []byte) (int, error) {
+// writeCompressedFrame compresses and writes p as a single frame.
+func (mw *msgWriter) writeCompressedFrame(ctx context.Context, p []byte) (int, error) {
+	err := mw.writeMu.lock(mw.ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to write: %w", err)
+	}
+	defer mw.writeMu.unlock()
+
+	if mw.closed {
+		return 0, errors.New("cannot use closed writer")
+	}
+
 	mw.ensureFlate()
 
 	buf := bpool.Get()
@@ -158,7 +163,7 @@ func (mw *msgWriter) writeFull(ctx context.Context, p []byte) (int, error) {
 		mw.trimWriter.w = origWriter
 	}()
 
-	_, err := mw.flateWriter.Write(p)
+	_, err = mw.flateWriter.Write(p)
 	if err != nil {
 		return 0, fmt.Errorf("failed to compress: %w", err)
 	}

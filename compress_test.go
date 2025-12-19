@@ -174,22 +174,32 @@ func TestWriteThenWriterContextTakeover(t *testing.T) {
 		p   []byte
 		err error
 	}
-	readCh := make(chan readResult, 2)
+	readCh := make(chan readResult, 3)
 	go func() {
-		for range 2 {
+		for range 3 {
 			typ, p, err := server.Read(ctx)
 			readCh <- readResult{typ, p, err}
 		}
 	}()
 
-	// 2. `Write` API
+	// We want to verify mixing `Write` and `Writer` usages still work.
+	//
+	// To this end, we call them in this order:
+	// - `Write`
+	// - `Writer`
+	// - `Write`
+	//
+	// This verifies that it works for a `Write` followed by a `Writer`
+	// as well as a `Writer` followed by a `Write`.
+
+	// 1. `Write` API
 	err := client.Write(ctx, MessageText, msg1)
 	assert.Success(t, err)
 
 	r := <-readCh
 	assert.Success(t, r.err)
-	assert.Equal(t, "msg1 type", MessageText, r.typ)
-	assert.Equal(t, "msg1 content", string(msg1), string(r.p))
+	assert.Equal(t, "Write type", MessageText, r.typ)
+	assert.Equal(t, "Write content", string(msg1), string(r.p))
 
 	// 2. `Writer` API
 	w, err := client.Writer(ctx, MessageBinary)
@@ -200,8 +210,17 @@ func TestWriteThenWriterContextTakeover(t *testing.T) {
 
 	r = <-readCh
 	assert.Success(t, r.err)
-	assert.Equal(t, "msg2 type", MessageBinary, r.typ)
-	assert.Equal(t, "msg2 content", string(msg2), string(r.p))
+	assert.Equal(t, "Writer type", MessageBinary, r.typ)
+	assert.Equal(t, "Writer content", string(msg2), string(r.p))
+
+	// 3. `Write` API again
+	err = client.Write(ctx, MessageText, msg1)
+	assert.Success(t, err)
+
+	r = <-readCh
+	assert.Success(t, r.err)
+	assert.Equal(t, "Write type", MessageText, r.typ)
+	assert.Equal(t, "Write content", string(msg1), string(r.p))
 }
 
 // TestCompressionDictionaryPreserved verifies that context takeover mode
@@ -212,32 +231,30 @@ func TestCompressionDictionaryPreserved(t *testing.T) {
 
 	msg := []byte(strings.Repeat(`{"type":"event","data":"value"}`, 50))
 
-	// Test with context takeover
-	clientConn1, serverConn1 := net.Pipe()
-	defer clientConn1.Close()
-	defer serverConn1.Close()
+	takeoverClient, takeoverServer := net.Pipe()
+	defer takeoverClient.Close()
+	defer takeoverServer.Close()
 
 	withTakeover := newConn(connConfig{
-		rwc:            clientConn1,
+		rwc:            takeoverClient,
 		client:         true,
 		copts:          CompressionContextTakeover.opts(),
 		flateThreshold: 64,
-		br:             bufio.NewReader(clientConn1),
-		bw:             bufio.NewWriterSize(clientConn1, 4096),
+		br:             bufio.NewReader(takeoverClient),
+		bw:             bufio.NewWriterSize(takeoverClient, 4096),
 	})
 
-	// Test without context takeover
-	clientConn2, serverConn2 := net.Pipe()
-	defer clientConn2.Close()
-	defer serverConn2.Close()
+	noTakeoverClient, noTakeoverServer := net.Pipe()
+	defer noTakeoverClient.Close()
+	defer noTakeoverServer.Close()
 
 	withoutTakeover := newConn(connConfig{
-		rwc:            clientConn2,
+		rwc:            noTakeoverClient,
 		client:         true,
 		copts:          CompressionNoContextTakeover.opts(),
 		flateThreshold: 64,
-		br:             bufio.NewReader(clientConn2),
-		bw:             bufio.NewWriterSize(clientConn2, 4096),
+		br:             bufio.NewReader(noTakeoverClient),
+		bw:             bufio.NewWriterSize(noTakeoverClient, 4096),
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -246,8 +263,8 @@ func TestCompressionDictionaryPreserved(t *testing.T) {
 	// Capture compressed sizes for both modes
 	var withTakeoverSizes, withoutTakeoverSizes []int64
 
-	reader1 := bufio.NewReader(serverConn1)
-	reader2 := bufio.NewReader(serverConn2)
+	reader1 := bufio.NewReader(takeoverServer)
+	reader2 := bufio.NewReader(noTakeoverServer)
 	readBuf := make([]byte, 8)
 
 	// Send 3 identical messages each
