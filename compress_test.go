@@ -74,8 +74,8 @@ func TestWriteSingleFrameCompressed(t *testing.T) {
 	var (
 		flateThreshold = 64
 
-		largeMsg = []byte(strings.Repeat("hello world ", 100)) // ~1200 bytes, above threshold
-		smallMsg = []byte("small message")                     // 13 bytes, below threshold
+		largeMsg = []byte(strings.Repeat("hello world ", 100))
+		smallMsg = []byte("small message")
 	)
 
 	testCases := []struct {
@@ -182,15 +182,16 @@ func TestWriteThenWriterContextTakeover(t *testing.T) {
 		}
 	}()
 
-	// First message: Write() redirects flateWriter to temp buffer
-	assert.Success(t, client.Write(ctx, MessageText, msg1))
+	// 2. `Write` API
+	err := client.Write(ctx, MessageText, msg1)
+	assert.Success(t, err)
 
 	r := <-readCh
 	assert.Success(t, r.err)
 	assert.Equal(t, "msg1 type", MessageText, r.typ)
 	assert.Equal(t, "msg1 content", string(msg1), string(r.p))
 
-	// Second message: Writer() streaming API
+	// 2. `Writer` API
 	w, err := client.Writer(ctx, MessageBinary)
 	assert.Success(t, err)
 	_, err = w.Write(msg2)
@@ -201,4 +202,93 @@ func TestWriteThenWriterContextTakeover(t *testing.T) {
 	assert.Success(t, r.err)
 	assert.Equal(t, "msg2 type", MessageBinary, r.typ)
 	assert.Equal(t, "msg2 content", string(msg2), string(r.p))
+}
+
+// TestCompressionDictionaryPreserved verifies that context takeover mode
+// preserves the compression dictionary across Conn.Write calls, resulting
+// in better compression for consecutive similar messages.
+func TestCompressionDictionaryPreserved(t *testing.T) {
+	t.Parallel()
+
+	msg := []byte(strings.Repeat(`{"type":"event","data":"value"}`, 50))
+
+	// Test with context takeover
+	clientConn1, serverConn1 := net.Pipe()
+	defer clientConn1.Close()
+	defer serverConn1.Close()
+
+	withTakeover := newConn(connConfig{
+		rwc:            clientConn1,
+		client:         true,
+		copts:          CompressionContextTakeover.opts(),
+		flateThreshold: 64,
+		br:             bufio.NewReader(clientConn1),
+		bw:             bufio.NewWriterSize(clientConn1, 4096),
+	})
+
+	// Test without context takeover
+	clientConn2, serverConn2 := net.Pipe()
+	defer clientConn2.Close()
+	defer serverConn2.Close()
+
+	withoutTakeover := newConn(connConfig{
+		rwc:            clientConn2,
+		client:         true,
+		copts:          CompressionNoContextTakeover.opts(),
+		flateThreshold: 64,
+		br:             bufio.NewReader(clientConn2),
+		bw:             bufio.NewWriterSize(clientConn2, 4096),
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	// Capture compressed sizes for both modes
+	var withTakeoverSizes, withoutTakeoverSizes []int64
+
+	reader1 := bufio.NewReader(serverConn1)
+	reader2 := bufio.NewReader(serverConn2)
+	readBuf := make([]byte, 8)
+
+	// Send 3 identical messages each
+	for range 3 {
+		// With context takeover
+		writeDone1 := make(chan error, 1)
+		go func() {
+			writeDone1 <- withTakeover.Write(ctx, MessageText, msg)
+		}()
+
+		h1, err := readFrameHeader(reader1, readBuf)
+		assert.Success(t, err)
+
+		_, err = io.CopyN(io.Discard, reader1, h1.payloadLength)
+		assert.Success(t, err)
+
+		withTakeoverSizes = append(withTakeoverSizes, h1.payloadLength)
+		assert.Success(t, <-writeDone1)
+
+		// Without context takeover
+		writeDone2 := make(chan error, 1)
+		go func() {
+			writeDone2 <- withoutTakeover.Write(ctx, MessageText, msg)
+		}()
+
+		h2, err := readFrameHeader(reader2, readBuf)
+		assert.Success(t, err)
+
+		_, err = io.CopyN(io.Discard, reader2, h2.payloadLength)
+		assert.Success(t, err)
+
+		withoutTakeoverSizes = append(withoutTakeoverSizes, h2.payloadLength)
+		assert.Success(t, <-writeDone2)
+	}
+
+	// With context takeover, the 2nd and 3rd messages should be smaller
+	// than without context takeover (dictionary helps compress repeated patterns).
+	// The first message will be similar size for both modes since there's no
+	// prior dictionary. But subsequent messages benefit from context takeover.
+	if withTakeoverSizes[2] >= withoutTakeoverSizes[2] {
+		t.Errorf("context takeover should compress better: with=%d, without=%d",
+			withTakeoverSizes[2], withoutTakeoverSizes[2])
+	}
 }
