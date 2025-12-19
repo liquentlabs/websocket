@@ -300,8 +300,8 @@ func TestCompressionDictionaryPreserved(t *testing.T) {
 		assert.Success(t, <-writeDone2)
 	}
 
-	// With context takeover, the 2nd and 3rd messages should be smaller
-	// than without context takeover (dictionary helps compress repeated patterns).
+	// With context takeover, the 2nd and 3rd messages should be smaller than
+	// without context takeover (dictionary helps compress repeated patterns).
 	// The first message will be similar size for both modes since there's no
 	// prior dictionary. But subsequent messages benefit from context takeover.
 	if withTakeoverSizes[2] >= withoutTakeoverSizes[2] {
