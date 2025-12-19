@@ -105,13 +105,12 @@ func (c *Conn) write(ctx context.Context, typ MessageType, p []byte) (int, error
 	if err != nil {
 		return 0, err
 	}
+	defer c.msgWriter.mu.unlock()
 
 	if !c.flate() || len(p) < c.flateThreshold {
-		defer c.msgWriter.mu.unlock()
 		return c.writeFrame(ctx, true, false, c.msgWriter.opcode, p)
 	}
 
-	defer c.msgWriter.mu.unlock()
 	return c.msgWriter.writeCompressedFrame(ctx, p)
 }
 
