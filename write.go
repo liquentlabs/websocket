@@ -155,8 +155,8 @@ func (mw *msgWriter) writeCompressedFrame(ctx context.Context, p []byte) (int, e
 	buf := bpool.Get()
 	defer bpool.Put(buf)
 
-	// Buffer compressed output so we can write as a single frame instead
-	// of chunked frames.
+	// Buffer compressed output so we can write as
+	// a single frame instead of chunked frames.
 	origWriter := mw.trimWriter.w
 	mw.trimWriter.w = buf
 	defer func() {
