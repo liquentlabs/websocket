@@ -1,4 +1,5 @@
 //go:build !js
+// +build !js
 
 package websocket
 
@@ -14,7 +15,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/coder/websocket/internal/bpool"
 	"github.com/coder/websocket/internal/errd"
 	"github.com/coder/websocket/internal/util"
 )
@@ -101,17 +101,23 @@ func (c *Conn) writer(ctx context.Context, typ MessageType) (io.WriteCloser, err
 }
 
 func (c *Conn) write(ctx context.Context, typ MessageType, p []byte) (int, error) {
-	err := c.msgWriter.reset(ctx, typ)
+	mw, err := c.writer(ctx, typ)
 	if err != nil {
 		return 0, err
 	}
-	defer c.msgWriter.mu.unlock()
 
-	if !c.flate() || len(p) < c.flateThreshold {
+	if !c.flate() {
+		defer c.msgWriter.mu.unlock()
 		return c.writeFrame(ctx, true, false, c.msgWriter.opcode, p)
 	}
 
-	return c.msgWriter.writeCompressedFrame(ctx, p)
+	n, err := mw.Write(p)
+	if err != nil {
+		return n, err
+	}
+
+	err = mw.Close()
+	return n, err
 }
 
 func (mw *msgWriter) reset(ctx context.Context, typ MessageType) error {
@@ -135,56 +141,6 @@ func (mw *msgWriter) putFlateWriter() {
 		putFlateWriter(mw.flateWriter)
 		mw.flateWriter = nil
 	}
-}
-
-// writeCompressedFrame compresses and writes p as a single frame.
-func (mw *msgWriter) writeCompressedFrame(ctx context.Context, p []byte) (int, error) {
-	err := mw.writeMu.lock(mw.ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to write: %w", err)
-	}
-	defer mw.writeMu.unlock()
-
-	if mw.closed {
-		return 0, errors.New("cannot use closed writer")
-	}
-
-	mw.ensureFlate()
-
-	buf := bpool.Get()
-	defer bpool.Put(buf)
-
-	// Buffer compressed output so we can write as
-	// a single frame instead of chunked frames.
-	origWriter := mw.trimWriter.w
-	mw.trimWriter.w = buf
-	defer func() {
-		mw.trimWriter.w = origWriter
-	}()
-
-	_, err = mw.flateWriter.Write(p)
-	if err != nil {
-		return 0, fmt.Errorf("failed to compress: %w", err)
-	}
-
-	err = mw.flateWriter.Flush()
-	if err != nil {
-		return 0, fmt.Errorf("failed to flush compression: %w", err)
-	}
-
-	mw.trimWriter.reset()
-
-	if !mw.flateContextTakeover() {
-		mw.putFlateWriter()
-	}
-
-	mw.closed = true
-
-	_, err = mw.c.writeFrame(ctx, true, true, mw.opcode, buf.Bytes())
-	if err != nil {
-		return 0, err
-	}
-	return len(p), nil
 }
 
 // Write writes the given bytes to the WebSocket connection.
@@ -316,10 +272,14 @@ func (c *Conn) writeFrame(ctx context.Context, fin bool, flate bool, opcode opco
 	select {
 	case <-c.closed:
 		return 0, net.ErrClosed
-	default:
+	case c.writeTimeout <- ctx:
 	}
-	c.setupWriteTimeout(ctx)
-	defer c.clearWriteTimeout()
+	defer func() {
+		select {
+		case <-c.closed:
+		case c.writeTimeout <- context.Background():
+		}
+	}()
 
 	c.writeHeader.fin = fin
 	c.writeHeader.opcode = opcode
@@ -391,7 +351,10 @@ func (c *Conn) writeFramePayload(p []byte) (n int, err error) {
 		// Start of next write in the buffer.
 		i := c.bw.Buffered()
 
-		j := min(len(p), c.bw.Available())
+		j := len(p)
+		if j > c.bw.Available() {
+			j = c.bw.Available()
+		}
 
 		_, err := c.bw.Write(p[:j])
 		if err != nil {

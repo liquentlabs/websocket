@@ -1,4 +1,5 @@
 //go:build !js
+// +build !js
 
 package websocket
 
@@ -51,8 +52,9 @@ type Conn struct {
 	br             *bufio.Reader
 	bw             *bufio.Writer
 
-	readTimeoutStop  atomic.Pointer[func() bool]
-	writeTimeoutStop atomic.Pointer[func() bool]
+	readTimeout     chan context.Context
+	writeTimeout    chan context.Context
+	timeoutLoopDone chan struct{}
 
 	// Read state.
 	readMu         *mu
@@ -112,6 +114,10 @@ func newConn(cfg connConfig) *Conn {
 		br: cfg.br,
 		bw: cfg.bw,
 
+		readTimeout:     make(chan context.Context),
+		writeTimeout:    make(chan context.Context),
+		timeoutLoopDone: make(chan struct{}),
+
 		closed:         make(chan struct{}),
 		activePings:    make(map[string]chan<- struct{}),
 		onPingReceived: cfg.onPingReceived,
@@ -138,6 +144,8 @@ func newConn(cfg connConfig) *Conn {
 	runtime.SetFinalizer(c, func(c *Conn) {
 		c.close()
 	})
+
+	go c.timeoutLoop()
 
 	return c
 }
@@ -168,34 +176,27 @@ func (c *Conn) close() error {
 	return err
 }
 
-func (c *Conn) setupWriteTimeout(ctx context.Context) {
-	stop := context.AfterFunc(ctx, func() {
-		c.clearWriteTimeout()
-		c.close()
-	})
-	swapTimeoutStop(&c.writeTimeoutStop, &stop)
-}
+func (c *Conn) timeoutLoop() {
+	defer close(c.timeoutLoopDone)
 
-func (c *Conn) clearWriteTimeout() {
-	swapTimeoutStop(&c.writeTimeoutStop, nil)
-}
+	readCtx := context.Background()
+	writeCtx := context.Background()
 
-func (c *Conn) setupReadTimeout(ctx context.Context) {
-	stop := context.AfterFunc(ctx, func() {
-		c.clearReadTimeout()
-		c.close()
-	})
-	swapTimeoutStop(&c.readTimeoutStop, &stop)
-}
+	for {
+		select {
+		case <-c.closed:
+			return
 
-func (c *Conn) clearReadTimeout() {
-	swapTimeoutStop(&c.readTimeoutStop, nil)
-}
+		case writeCtx = <-c.writeTimeout:
+		case readCtx = <-c.readTimeout:
 
-func swapTimeoutStop(p *atomic.Pointer[func() bool], newStop *func() bool) {
-	oldStop := p.Swap(newStop)
-	if oldStop != nil {
-		(*oldStop)()
+		case <-readCtx.Done():
+			c.close()
+			return
+		case <-writeCtx.Done():
+			c.close()
+			return
+		}
 	}
 }
 

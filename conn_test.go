@@ -36,7 +36,7 @@ func TestConn(t *testing.T) {
 			return websocket.CompressionMode(xrand.Int(int(websocket.CompressionContextTakeover) + 1))
 		}
 
-		for range 5 {
+		for i := 0; i < 5; i++ {
 			t.Run("", func(t *testing.T) {
 				tt, c1, c2 := newConnTest(t, &websocket.DialOptions{
 					CompressionMode:      compressionMode(),
@@ -50,7 +50,7 @@ func TestConn(t *testing.T) {
 
 				c1.SetReadLimit(131072)
 
-				for range 5 {
+				for i := 0; i < 5; i++ {
 					err := wstest.Echo(tt.ctx, c1, 131072)
 					assert.Success(t, err)
 				}
@@ -76,7 +76,7 @@ func TestConn(t *testing.T) {
 		c1.CloseRead(tt.ctx)
 		c2.CloseRead(tt.ctx)
 
-		for range 10 {
+		for i := 0; i < 10; i++ {
 			err := c1.Ping(tt.ctx)
 			assert.Success(t, err)
 		}
@@ -185,7 +185,7 @@ func TestConn(t *testing.T) {
 		const count = 100
 		errs := make(chan error, count)
 
-		for range count {
+		for i := 0; i < count; i++ {
 			go func() {
 				select {
 				case errs <- c1.Write(tt.ctx, websocket.MessageBinary, msg):
@@ -195,7 +195,7 @@ func TestConn(t *testing.T) {
 			}()
 		}
 
-		for range count {
+		for i := 0; i < count; i++ {
 			select {
 			case err := <-errs:
 				assert.Success(t, err)
@@ -341,7 +341,7 @@ func TestConn(t *testing.T) {
 			return wsjson.Write(tt.ctx, c1, exp)
 		})
 
-		var act any
+		var act interface{}
 		err := wsjson.Read(tt.ctx, c1, &act)
 		assert.Success(t, err)
 		assert.Equal(t, "read msg", exp, act)
@@ -372,7 +372,7 @@ func TestConn(t *testing.T) {
 			return wsjson.Write(tt.ctx, c1, exp)
 		})
 
-		var act any
+		var act interface{}
 		err := wsjson.Read(tt.ctx, c1, &act)
 		assert.Success(t, err)
 		assert.Equal(t, "read msg", exp, act)
@@ -408,7 +408,7 @@ func TestConn(t *testing.T) {
 
 		c1.SetReadLimit(131072)
 
-		for range 5 {
+		for i := 0; i < 5; i++ {
 			err := wstest.Echo(tt.ctx, c1, 131072)
 			assert.Success(t, err)
 		}
@@ -420,25 +420,6 @@ func TestConn(t *testing.T) {
 
 		err = c1.Close(websocket.StatusNormalClosure, "")
 		assert.Success(t, err)
-	})
-
-	t.Run("ReadLimitExceededReturnsErrMessageTooBig", func(t *testing.T) {
-		tt, c1, c2 := newConnTest(t, nil, nil)
-
-		c1.SetReadLimit(1024)
-		_ = c2.CloseRead(tt.ctx)
-
-		writeDone := xsync.Go(func() error {
-			payload := strings.Repeat("x", 4096)
-			return c2.Write(tt.ctx, websocket.MessageText, []byte(payload))
-		})
-
-		_, _, err := c1.Read(tt.ctx)
-		assert.ErrorIs(t, websocket.ErrMessageTooBig, err)
-		assert.Contains(t, err, "read limited at 1025 bytes")
-
-		_ = c2.CloseNow()
-		<-writeDone
 	})
 }
 
@@ -679,7 +660,7 @@ func assertEcho(tb testing.TB, ctx context.Context, c *websocket.Conn) {
 		return wsjson.Write(ctx, c, exp)
 	})
 
-	var act any
+	var act interface{}
 	c.SetReadLimit(1 << 30)
 	err := wsjson.Read(ctx, c, &act)
 	assert.Success(tb, err)
@@ -701,7 +682,7 @@ func assertClose(tb testing.TB, c *websocket.Conn) {
 
 func TestConcurrentClosePing(t *testing.T) {
 	t.Parallel()
-	for range 64 {
+	for i := 0; i < 64; i++ {
 		func() {
 			c1, c2 := wstest.Pipe(nil, nil)
 			defer c1.CloseNow()

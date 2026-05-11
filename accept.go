@@ -1,4 +1,5 @@
 //go:build !js
+// +build !js
 
 package websocket
 
@@ -40,10 +41,9 @@ type AcceptOptions struct {
 	// In such a case, example.com is the origin and chat.example.com is the request host.
 	// One would set this field to []string{"example.com"} to authorize example.com to connect.
 	//
-	// Each pattern is matched case insensitively with path.Match (see
-	// https://golang.org/pkg/path/#Match). By default, it is matched
-	// against the request origin host. If the pattern contains a URI
-	// scheme ("://"), it will be matched against "scheme://host".
+	// Each pattern is matched case insensitively against the request origin host
+	// with path.Match.
+	// See https://golang.org/pkg/path/#Match
 	//
 	// Please ensure you understand the ramifications of enabling this.
 	// If used incorrectly your WebSocket server will be open to CSRF attacks.
@@ -90,7 +90,7 @@ func (opts *AcceptOptions) cloneWithDefaults() *AcceptOptions {
 }
 
 // Accept accepts a WebSocket handshake from a client and upgrades the
-// connection to a WebSocket.
+// the connection to a WebSocket.
 //
 // Accept will not allow cross origin requests by default.
 // See the InsecureSkipVerify and OriginPatterns options to allow cross origin requests.
@@ -241,11 +241,7 @@ func authenticateOrigin(r *http.Request, originHosts []string) error {
 	}
 
 	for _, hostPattern := range originHosts {
-		target := u.Host
-		if strings.Contains(hostPattern, "://") {
-			target = u.Scheme + "://" + u.Host
-		}
-		matched, err := match(hostPattern, target)
+		matched, err := match(hostPattern, u.Host)
 		if err != nil {
 			return fmt.Errorf("failed to parse path pattern %q: %w", hostPattern, err)
 		}

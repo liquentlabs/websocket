@@ -188,7 +188,8 @@ func (nc *netConn) read(p []byte) (int, error) {
 	return n, err
 }
 
-type websocketAddr struct{}
+type websocketAddr struct {
+}
 
 func (a websocketAddr) Network() string {
 	return "websocket"

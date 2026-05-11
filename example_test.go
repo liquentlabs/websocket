@@ -25,7 +25,7 @@ func ExampleAccept() {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second*10)
 		defer cancel()
 
-		var v any
+		var v interface{}
 		err = wsjson.Read(ctx, c, &v)
 		if err != nil {
 			log.Println(err)
@@ -150,7 +150,7 @@ func ExampleConn_Ping() {
 	// Required to read the Pongs from the server.
 	ctx = c.CloseRead(ctx)
 
-	for range 5 {
+	for i := 0; i < 5; i++ {
 		err = c.Ping(ctx)
 		if err != nil {
 			log.Fatal(err)

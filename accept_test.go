@@ -1,4 +1,5 @@
 //go:build !js
+// +build !js
 
 package websocket
 
@@ -465,42 +466,6 @@ func Test_authenticateOrigin(t *testing.T) {
 				"bar.com",
 			},
 			success: false,
-		},
-		{
-			name:   "originPatternsWithSchemeHttps",
-			origin: "https://two.example.com",
-			host:   "example.com",
-			originPatterns: []string{
-				"https://*.example.com",
-			},
-			success: true,
-		},
-		{
-			name:   "originPatternsWithSchemeMismatch",
-			origin: "https://two.example.com",
-			host:   "example.com",
-			originPatterns: []string{
-				"http://*.example.com",
-			},
-			success: false,
-		},
-		{
-			name:   "originPatternsWithSchemeAndPort",
-			origin: "https://example.com:8443",
-			host:   "example.com",
-			originPatterns: []string{
-				"https://example.com:8443",
-			},
-			success: true,
-		},
-		{
-			name:   "backwardsCompatHostOnlyPattern",
-			origin: "http://two.example.com",
-			host:   "example.com",
-			originPatterns: []string{
-				"*.example.com",
-			},
-			success: true,
 		},
 	}
 
